@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { 
+        font-family: 'Google Sans', Arial, sans-serif; 
+        margin: 0; 
+        padding: 16px;
+        background: #f8f9fa;
+      }
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid #dadce0;
+        margin-bottom: 16px;
+      }
+      .tab {
+        padding: 12px 16px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: #5f6368;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+      }
+      .tab.active {
+        color: #1a73e8;
+        border-bottom-color: #1a73e8;
+      }
+      .tab:hover {
+        background: #f1f3f4;
+      }
+      .tab-content {
+        display: none;
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .tab-content.active {
+        display: block;
+      }
+      h2 { 
+        margin: 0 0 20px 0; 
+        color: #202124;
+        font-size: 20px;
+        font-weight: 500;
+      }
+      label { 
+        display: block; 
+        margin: 16px 0 4px 0;
+        color: #3c4043;
+        font-weight: 500;
+      }
+      select, input[type=text], input[type=datetime-local] { 
+        width: 100%; 
+        padding: 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      select:focus, input:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 1px #1a73e8;
+      }
+      button { 
+        margin-top: 20px; 
+        width: 100%; 
+        padding: 12px;
+        background: #1a73e8;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #1557b0;
+      }
+      button:disabled {
+        background: #dadce0;
+        cursor: not-allowed;
+      }
+      .secondary-btn {
+        background: #f8f9fa;
+        color: #3c4043;
+        border: 1px solid #dadce0;
+      }
+      .secondary-btn:hover {
+        background: #f1f3f4;
+      }
+      .status {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 4px;
+        display: none;
+      }
+      .status.success {
+        background: #e8f5e8;
+        color: #137333;
+        border: 1px solid #81c995;
+      }
+      .status.error {
+        background: #fce8e6;
+        color: #d93025;
+        border: 1px solid #f28b82;
+      }
+      .status.info {
+        background: #e8f0fe;
+        color: #1a73e8;
+        border: 1px solid #aecbfa;
+      }
+      .attachment-list {
+        max-height: 150px;
+        overflow-y: auto;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        padding: 8px;
+      }
+      .attachment-item {
+        display: flex;
+        align-items: center;
+        padding: 4px;
+        margin: 2px 0;
+      }
+      .attachment-item input {
+        margin-right: 8px;
+        width: auto;
+      }
+      .job-item {
+        padding: 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        margin: 8px 0;
+        background: white;
+      }
+      .job-status {
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+      }
+      .job-status.scheduled { background: #e8f0fe; color: #1a73e8; }
+      .job-status.completed { background: #e8f5e8; color: #137333; }
+      .job-status.failed { background: #fce8e6; color: #d93025; }
+      .job-status.cancelled { background: #f1f3f4; color: #5f6368; }
+    </style>
+  </head>
+  <body>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('send')">Send</button>
+      <button class="tab" onclick="showTab('schedule')">Schedule</button>
+      <button class="tab" onclick="showTab('jobs')">Jobs</button>
+    </div>
+
+    <!-- Send Mail Tab -->
+    <div id="send-tab" class="tab-content active">
+      <h2>Send Mail Myth</h2>
+      <label for="draft">Gmail Draft:</label>
+      <select id="draft"></select>
+      
+      <label for="range">Sheet Range:</label>
+      <input type="text" id="range" value="A1:C10" placeholder="e.g. A1:C10">
+      
+      <label for="attachments">Attachments (from Drive):</label>
+      <div id="attachment-list" class="attachment-list">
+        <div style="color: #5f6368; padding: 8px;">Loading files...</div>
+      </div>
+      
+      <button onclick="sendMerge()">Send Now</button>
+      <button class="secondary-btn" onclick="showTrackingStats()">View Tracking Stats</button>
+      <div id="send-status" class="status"></div>
+      
+      <!-- Tracking Stats Section -->
+      <div id="tracking-stats" style="display: none; margin-top: 20px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
+        <h3 style="margin: 0 0 12px 0; color: #202124;">📊 Tracking Statistics</h3>
+        <div id="tracking-stats-content">
+          <div style="color: #5f6368;">Loading stats...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule Mail Tab -->
+    <div id="schedule-tab" class="tab-content">
+      <h2>Schedule Mail Myth</h2>
+      <label for="schedule-draft">Gmail Draft:</label>
+      <select id="schedule-draft"></select>
+      
+      <label for="schedule-range">Sheet Range:</label>
+      <input type="text" id="schedule-range" value="A1:C10" placeholder="e.g. A1:C10">
+      
+      <label for="schedule-time">Schedule Time:</label>
+      <input type="datetime-local" id="schedule-time">
+      
+      <label for="schedule-attachments">Attachments (from Drive):</label>
+      <div id="schedule-attachment-list" class="attachment-list">
+        <div style="color: #5f6368; padding: 8px;">Loading files...</div>
+      </div>
+      
+      <button onclick="scheduleMerge()">Schedule Mail Myth</button>
+      <div id="schedule-status" class="status"></div>
+    </div>
+
+    <!-- Jobs Tab -->
+    <div id="jobs-tab" class="tab-content">
+      <h2>Scheduled Jobs</h2>
+      <button class="secondary-btn" onclick="refreshJobs()">Refresh</button>
+      <div id="jobs-list">
+        <div style="color: #5f6368; padding: 20px; text-align: center;">Loading jobs...</div>
+      </div>
+    </div>
+
+    <script>
+      let driveFiles = [];
+      
+      function showTab(tabName) {
+        // Hide all tabs
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        
+        // Show selected tab
+        document.querySelector(`#${tabName}-tab`).classList.add('active');
+        event.target.classList.add('active');
+      }
+      
+      function showStatus(elementId, message, type) {
+        const status = document.getElementById(elementId);
+        status.textContent = message;
+        status.className = `status ${type}`;
+        status.style.display = 'block';
+        setTimeout(() => status.style.display = 'none', 5000);
+      }
+      
+      function loadDrafts() {
+        google.script.run.withSuccessHandler(function(drafts) {
+          const selects = ['draft', 'schedule-draft'];
+          selects.forEach(selectId => {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '';
+            drafts.forEach(function(d) {
+              const opt = document.createElement('option');
+              opt.value = d.id;
+              opt.textContent = d.subject;
+              select.appendChild(opt);
+            });
+          });
+        }).getGmailDrafts();
+      }
+      
+      function loadDriveFiles() {
+        google.script.run.withSuccessHandler(function(files) {
+          driveFiles = files;
+          renderAttachmentList('attachment-list');
+          renderAttachmentList('schedule-attachment-list');
+        }).getDriveFiles();
+      }
+      
+      function renderAttachmentList(containerId) {
+        const container = document.getElementById(containerId);
+        if (driveFiles.length === 0) {
+          container.innerHTML = '<div style="color: #5f6368; padding: 8px;">No files found</div>';
+          return;
+        }
+        
+        container.innerHTML = driveFiles.map(file => 
+          `<div class="attachment-item">
+            <input type="checkbox" value="${file.id}" id="${containerId}-${file.id}">
+            <label for="${containerId}-${file.id}" style="margin: 0;">${file.name}</label>
+          </div>`
+        ).join('');
+      }
+      
+      function getSelectedAttachments(containerId) {
+        const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
+        return Array.from(checkboxes).map(cb => cb.value);
+      }
+      
+      function sendMerge() {
+        const draftId = document.getElementById('draft').value;
+        const range = document.getElementById('range').value;
+        const attachments = getSelectedAttachments('attachment-list');
+        
+        if (!draftId || !range) {
+          showStatus('send-status', 'Please select a draft and range', 'error');
+          return;
+        }
+        
+        showStatus('send-status', 'Sending...', 'info');
+        google.script.run
+          .withSuccessHandler(function(count) {
+            showStatus('send-status', `Sent ${count} emails!`, 'success');
+          })
+          .withFailureHandler(function(error) {
+            showStatus('send-status', `Error: ${error.message}`, 'error');
+          })
+          .sendMailMerge(draftId, range, attachments);
+      }
+      
+      function scheduleMerge() {
+        const draftId = document.getElementById('schedule-draft').value;
+        const range = document.getElementById('schedule-range').value;
+        const scheduleTime = document.getElementById('schedule-time').value;
+        const attachments = getSelectedAttachments('schedule-attachment-list');
+        
+        if (!draftId || !range || !scheduleTime) {
+          showStatus('schedule-status', 'Please fill all required fields', 'error');
+          return;
+        }
+        
+        showStatus('schedule-status', 'Scheduling...', 'info');
+        google.script.run
+          .withSuccessHandler(function(result) {
+            showStatus('schedule-status', `Scheduled for ${new Date(result.scheduledTime).toLocaleString()}`, 'success');
+            refreshJobs();
+          })
+          .withFailureHandler(function(error) {
+            showStatus('schedule-status', `Error: ${error.message}`, 'error');
+          })
+          .scheduleMailMerge(draftId, range, scheduleTime);
+      }
+      
+      function refreshJobs() {
+        document.getElementById('jobs-list').innerHTML = '<div style="color: #5f6368; padding: 20px; text-align: center;">Loading jobs...</div>';
+        google.script.run.withSuccessHandler(function(jobs) {
+          const container = document.getElementById('jobs-list');
+          if (jobs.length === 0) {
+            container.innerHTML = '<div style="color: #5f6368; padding: 20px; text-align: center;">No scheduled jobs</div>';
+            return;
+          }
+          
+          container.innerHTML = jobs.map(job => 
+            `<div class="job-item">
+              <div style="display: flex; justify-content: between; align-items: center;">
+                <div>
+                  <strong>Job ID:</strong> ${job.id.substring(0, 8)}...
+                  <span class="job-status ${job.status}">${job.status}</span>
+                </div>
+                ${job.status === 'scheduled' ? `<button class="secondary-btn" onclick="cancelJob('${job.id}')" style="margin: 0; width: auto; padding: 6px 12px;">Cancel</button>` : ''}
+              </div>
+              <div><strong>Scheduled:</strong> ${new Date(job.scheduledTime).toLocaleString()}</div>
+              <div><strong>Range:</strong> ${job.sheetRange}</div>
+              ${job.sentCount ? `<div><strong>Sent:</strong> ${job.sentCount} emails</div>` : ''}
+              ${job.error ? `<div style="color: #d93025;"><strong>Error:</strong> ${job.error}</div>` : ''}
+            </div>`
+          ).join('');
+        }).getScheduledJobs();
+      }
+      
+      function cancelJob(jobId) {
+        google.script.run
+          .withSuccessHandler(function() {
+            showStatus('schedule-status', 'Job cancelled', 'success');
+            refreshJobs();
+          })
+          .withFailureHandler(function(error) {
+            showStatus('schedule-status', `Error: ${error.message}`, 'error');
+          })
+          .cancelScheduledJob(jobId);
+      }
+
+      function showTrackingStats() {
+        const statsDiv = document.getElementById('tracking-stats');
+        const isVisible = statsDiv.style.display !== 'none';
+        
+        if (isVisible) {
+          statsDiv.style.display = 'none';
+          return;
+        }
+        
+        statsDiv.style.display = 'block';
+        document.getElementById('tracking-stats-content').innerHTML = '<div style="color: #5f6368;">Loading stats...</div>';
+        
+        google.script.run
+          .withSuccessHandler(function(stats) {
+            const content = document.getElementById('tracking-stats-content');
+            if (stats.totalEmails === 0) {
+              content.innerHTML = '<div style="color: #5f6368;">No tracking data available. Send some emails first!</div>';
+              return;
+            }
+            
+            const openRate = ((stats.opens / stats.totalEmails) * 100).toFixed(1);
+            const clickRate = ((stats.clicks / stats.totalEmails) * 100).toFixed(1);
+            
+            content.innerHTML = `
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <div style="text-align: center; padding: 12px; background: white; border-radius: 6px;">
+                  <div style="font-size: 24px; font-weight: 600; color: #1a73e8;">${stats.totalEmails}</div>
+                  <div style="color: #5f6368; font-size: 12px;">Total Sent</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: white; border-radius: 6px;">
+                  <div style="font-size: 24px; font-weight: 600; color: #137333;">${stats.opens}</div>
+                  <div style="color: #5f6368; font-size: 12px;">Opens (${openRate}%)</div>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="text-align: center; padding: 12px; background: white; border-radius: 6px;">
+                  <div style="font-size: 24px; font-weight: 600; color: #ea4335;">${stats.clicks}</div>
+                  <div style="color: #5f6368; font-size: 12px;">Total Clicks</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: white; border-radius: 6px;">
+                  <div style="font-size: 24px; font-weight: 600; color: #fbbc04;">${clickRate}%</div>
+                  <div style="color: #5f6368; font-size: 12px;">Click Rate</div>
+                </div>
+              </div>
+              <div style="margin-top: 12px; font-size: 12px; color: #5f6368;">
+                💡 <strong>Tip:</strong> Add links to your Gmail draft to track clicks!
+              </div>
+            `;
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('tracking-stats-content').innerHTML = 
+              `<div style="color: #d93025;">Error loading stats: ${error.message}</div>`;
+          })
+          .getTrackingStats();
+      }
+      
+      // Initialize
+      loadDrafts();
+      loadDriveFiles();
+      refreshJobs();
+    </script>
+  </body>
+</html> 
