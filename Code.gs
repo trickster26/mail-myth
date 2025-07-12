@@ -23,14 +23,28 @@ function getGmailDrafts() {
   });
 }
 
+function findColumnIndex(headers, target) {
+  target = target.trim().toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i] && headers[i].trim().toLowerCase() === target) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function getOrCreateColumn(sheet, header) {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var col = headers.indexOf(header) + 1;
-  if (col === 0) {
-    // Add new column
-    col = headers.length + 1;
-    sheet.getRange(1, col).setValue(header);
+  var normalizedHeader = header.trim().toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i] && headers[i].trim().toLowerCase() === normalizedHeader) {
+      return i + 1;
+    }
   }
+  // Add new column at the end
+  var col = headers.length + 1;
+  sheet.getRange(1, col).setValue(header);
+  Logger.log('Created column: ' + header + ' at index ' + col);
   return col;
 }
 
@@ -59,7 +73,7 @@ function getDriveFiles() {
 }
 
 function processLinksForTracking(htmlBody, trackingId) {
-  var scriptUrl = ScriptApp.getService().getUrl();
+  var scriptUrl = 'https://script.google.com/macros/s/AKfycbzkYDSgsBv2wfesBDgVs5NB7eTlUddZEynRRVQ0E4MMqCgEaldO1UoAzaOLEPMKZKM_/exec';
   
   // Find all links in the HTML and replace with tracking URLs
   var linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi;
@@ -78,21 +92,170 @@ function processLinksForTracking(htmlBody, trackingId) {
   });
 }
 
+function addUnsubscribeLink(emailBody, trackingId) {
+  var scriptUrl = 'https://script.google.com/macros/s/AKfycbzkYDSgsBv2wfesBDgVs5NB7eTlUddZEynRRVQ0E4MMqCgEaldO1UoAzaOLEPMKZKM_/exec';
+  var unsubscribeUrl = scriptUrl + '?action=unsubscribe&tid=' + encodeURIComponent(trackingId);
+  
+  var unsubscribeHtml = 
+    '<div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-top: 1px solid #dee2e6; text-align: center; font-size: 12px; color: #6c757d;">' +
+    '<p style="margin: 0 0 10px 0;">Don\'t want to receive these emails?</p>' +
+    '<a href="' + unsubscribeUrl + '" style="color: #dc3545; text-decoration: none;">Unsubscribe</a>' +
+    '</div>';
+  
+  return emailBody + unsubscribeHtml;
+}
+
+function isEmailUnsubscribed(email) {
+  var properties = PropertiesService.getScriptProperties();
+  var unsubscribedEmails = properties.getProperty('unsubscribed_emails');
+  
+  if (!unsubscribedEmails) {
+    return false;
+  }
+  
+  try {
+    var emailList = JSON.parse(unsubscribedEmails);
+    return emailList.indexOf(email.toLowerCase()) !== -1;
+  } catch (e) {
+    return false;
+  }
+}
+
+function addToUnsubscribeList(email) {
+  var properties = PropertiesService.getScriptProperties();
+  var unsubscribedEmails = properties.getProperty('unsubscribed_emails');
+  
+  var emailList = [];
+  if (unsubscribedEmails) {
+    try {
+      emailList = JSON.parse(unsubscribedEmails);
+    } catch (e) {
+      emailList = [];
+    }
+  }
+  
+  var emailLower = email.toLowerCase();
+  if (emailList.indexOf(emailLower) === -1) {
+    emailList.push(emailLower);
+    properties.setProperty('unsubscribed_emails', JSON.stringify(emailList));
+  }
+  
+  // Update the 'Unsubscribed' column in the sheet if the email exists
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+  var emailCol = findColumnIndex(data[0], 'Email');
+  var unsubscribedCol = findColumnIndex(data[0], 'Unsubscribed');
+  if (emailCol !== -1 && unsubscribedCol !== -1) {
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][emailCol] && data[i][emailCol].toLowerCase() === emailLower) {
+        sheet.getRange(i + 1, unsubscribedCol + 1).setValue('Yes');
+      }
+    }
+  }
+  
+  return true;
+}
+
+function removeFromUnsubscribeList(email) {
+  var properties = PropertiesService.getScriptProperties();
+  var unsubscribedEmails = properties.getProperty('unsubscribed_emails');
+  
+  if (!unsubscribedEmails) {
+    return false;
+  }
+  
+  try {
+    var emailList = JSON.parse(unsubscribedEmails);
+    var emailLower = email.toLowerCase();
+    var index = emailList.indexOf(emailLower);
+    
+    if (index !== -1) {
+      emailList.splice(index, 1);
+      properties.setProperty('unsubscribed_emails', JSON.stringify(emailList));
+      return true;
+    }
+  } catch (e) {
+    return false;
+  }
+  
+  return false;
+}
+
+function getUnsubscribeList() {
+  var properties = PropertiesService.getScriptProperties();
+  var unsubscribedEmails = properties.getProperty('unsubscribed_emails');
+  
+  if (!unsubscribedEmails) {
+    return [];
+  }
+  
+  try {
+    return JSON.parse(unsubscribedEmails);
+  } catch (e) {
+    return [];
+  }
+}
+
+function getGmailQuota() {
+  var remaining = MailApp.getRemainingDailyQuota();
+  return {
+    remaining: remaining,
+    max: 2000 // Default for Google Workspace accounts; adjust if needed
+  };
+}
+
+function clearTrackingColumns(sheet, sheetRange) {
+  var range = sheet.getRange(sheetRange);
+  var data = range.getValues();
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var openedCol = findColumnIndex(headers, 'Opened');
+  var lastOpenedCol = findColumnIndex(headers, 'Last Opened');
+  var clickedCol = findColumnIndex(headers, 'Clicked');
+  var lastClickedCol = findColumnIndex(headers, 'Last Clicked');
+  for (var i = 1; i < data.length; i++) {
+    var rowIdx = range.getRow() + i - 1;
+    if (openedCol !== -1) sheet.getRange(rowIdx, openedCol + 1).setValue('');
+    if (lastOpenedCol !== -1) sheet.getRange(rowIdx, lastOpenedCol + 1).setValue('');
+    if (clickedCol !== -1) sheet.getRange(rowIdx, clickedCol + 1).setValue('');
+    if (lastClickedCol !== -1) sheet.getRange(rowIdx, lastClickedCol + 1).setValue('');
+  }
+}
+
 function sendMailMerge(draftId, sheetRange, attachmentIds) {
   var sheet = SpreadsheetApp.getActiveSheet();
   var data = sheet.getRange(sheetRange).getValues();
-  var headers = data[0];
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var rows = data.slice(1);
   var draft = GmailApp.getDraft(draftId);
   var msg = draft.getMessage();
   var subject = msg.getSubject();
   var body = msg.getBody();
   var sentCount = 0;
+  var skippedCount = 0;
 
-  // Ensure TrackingID, Opened, and Clicked columns exist
+  // Ensure all tracking columns exist
   var trackingIdCol = getOrCreateColumn(sheet, 'TrackingID');
   var openedCol = getOrCreateColumn(sheet, 'Opened');
+  var lastOpenedCol = getOrCreateColumn(sheet, 'Last Opened');
   var clickedCol = getOrCreateColumn(sheet, 'Clicked');
+  var lastClickedCol = getOrCreateColumn(sheet, 'Last Clicked');
+  var unsubscribedCol = getOrCreateColumn(sheet, 'Unsubscribed');
+
+  // Clear tracking columns for the selected range
+  clearTrackingColumns(sheet, sheetRange);
+
+  // Quota check
+  var quota = MailApp.getRemainingDailyQuota();
+  var emailCol = findColumnIndex(headers, 'Email');
+  var toSend = 0;
+  for (var i = 1; i < data.length; i++) {
+    var email = data[i][emailCol];
+    if (!email) continue;
+    if (!isEmailUnsubscribed(email)) toSend++;
+  }
+  if (toSend > quota) {
+    throw new Error('Not enough Gmail quota to send ' + toSend + ' emails. Remaining quota: ' + quota);
+  }
 
   // Get attachments from Drive if provided
   var attachments = [];
@@ -107,9 +270,16 @@ function sendMailMerge(draftId, sheetRange, attachmentIds) {
     });
   }
 
-  rows.forEach(function(row, idx) {
-    var email = row[0]; // Assume first column is email
-    if (!email) return; // Skip if no email
+  for (var idx = 0; idx < rows.length; idx++) {
+    var row = rows[idx];
+    var email = row[emailCol];
+    if (!email) continue;
+    // Check if email is unsubscribed
+    if (isEmailUnsubscribed(email)) {
+      sheet.getRange(idx + 2, unsubscribedCol).setValue('Yes');
+      skippedCount++;
+      continue;
+    }
     var personalizedBody = body;
     headers.forEach(function(header, i) {
       var re = new RegExp('{{' + header + '}}', 'g');
@@ -121,25 +291,27 @@ function sendMailMerge(draftId, sheetRange, attachmentIds) {
       trackingId = generateTrackingId();
       sheet.getRange(idx + 2, trackingIdCol).setValue(trackingId);
     }
-    
     // Process links for click tracking
     personalizedBody = processLinksForTracking(personalizedBody, trackingId);
-    
+    // Add unsubscribe link
+    personalizedBody = addUnsubscribeLink(personalizedBody, trackingId);
     // Insert tracking pixel
-    var scriptUrl = ScriptApp.getService().getUrl();
+    var scriptUrl = 'https://script.google.com/macros/s/AKfycbzkYDSgsBv2wfesBDgVs5NB7eTlUddZEynRRVQ0E4MMqCgEaldO1UoAzaOLEPMKZKM_/exec';
     var pixelUrl = scriptUrl + '?action=open&tid=' + encodeURIComponent(trackingId);
     personalizedBody += '<img src="' + pixelUrl + '" width="1" height="1" style="display:none">';
-    
     // Send email with or without attachments
     var emailOptions = {htmlBody: personalizedBody};
     if (attachments.length > 0) {
       emailOptions.attachments = attachments;
     }
-    
     GmailApp.sendEmail(email, subject, '', emailOptions);
     sentCount++;
-  });
-  return sentCount;
+  }
+  return {
+    sent: sentCount,
+    skipped: skippedCount,
+    total: sentCount + skippedCount
+  };
 }
 
 function scheduleMailMerge(draftId, sheetRange, scheduleDateTime) {
@@ -188,7 +360,9 @@ function executeScheduledMailMerge(e) {
       
       // Update job status
       jobData.status = 'completed';
-      jobData.sentCount = result;
+      jobData.sentCount = result.sent;
+      jobData.skippedCount = result.skipped;
+      jobData.totalSent = result.total;
       jobData.completedTime = new Date().toISOString();
       properties.setProperty('job_' + triggerId, JSON.stringify(jobData));
       
@@ -254,40 +428,113 @@ function doGet(e) {
   var action = e.parameter.action || 'open'; // Default to open tracking
   var tid = e.parameter.tid;
   
+  if (action === 'unsubscribe') {
+    // Handle unsubscribe request
+    if (tid) {
+      var sheet = SpreadsheetApp.getActiveSheet();
+      var data = sheet.getDataRange().getValues();
+      var trackingIdCol = findColumnIndex(data[0], 'TrackingID');
+      var emailCol = findColumnIndex(data[0], 'Email');
+      
+      if (trackingIdCol !== -1 && emailCol !== -1) {
+        for (var i = 1; i < data.length; i++) {
+          if (data[i][trackingIdCol] === tid) {
+            var email = data[i][emailCol];
+            addToUnsubscribeList(email);
+            
+            // Return unsubscribe confirmation page
+            return HtmlService.createHtmlOutput(
+              '<!DOCTYPE html>' +
+              '<html>' +
+              '<head>' +
+              '<title>Unsubscribed</title>' +
+              '<style>' +
+              'body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }' +
+              '.container { max-width: 500px; margin: 0 auto; }' +
+              '.success { color: #28a745; font-size: 24px; margin-bottom: 20px; }' +
+              '.message { color: #6c757d; line-height: 1.6; }' +
+              '</style>' +
+              '</head>' +
+              '<body>' +
+              '<div class="container">' +
+              '<div class="success">✓ Unsubscribed Successfully</div>' +
+              '<div class="message">' +
+              '<p>You have been unsubscribed from our mailing list.</p>' +
+              '<p>You will no longer receive emails from us.</p>' +
+              '<p><small>If you change your mind, please contact us to resubscribe.</small></p>' +
+              '</div>' +
+              '</div>' +
+              '</body>' +
+              '</html>'
+            );
+          }
+        }
+      }
+    }
+    
+    // Fallback unsubscribe page
+    return HtmlService.createHtmlOutput(
+      '<!DOCTYPE html>' +
+      '<html>' +
+      '<head>' +
+      '<title>Unsubscribe</title>' +
+      '<style>' +
+      'body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }' +
+      '.container { max-width: 500px; margin: 0 auto; }' +
+      '.error { color: #dc3545; font-size: 24px; margin-bottom: 20px; }' +
+      '.message { color: #6c757d; line-height: 1.6; }' +
+      '</style>' +
+      '</head>' +
+      '<body>' +
+      '<div class="container">' +
+      '<div class="error">⚠️ Error</div>' +
+      '<div class="message">' +
+      '<p>Unable to process your unsubscribe request.</p>' +
+      '<p>Please contact us directly to unsubscribe.</p>' +
+      '</div>' +
+      '</div>' +
+      '</body>' +
+      '</html>'
+    );
+  }
+  
   if (tid) {
     var sheet = SpreadsheetApp.getActiveSheet();
     var data = sheet.getDataRange().getValues();
-    var trackingIdCol = data[0].indexOf('TrackingID');
+    var headers = data[0];
+    var trackingIdCol = getOrCreateColumn(sheet, 'TrackingID') - 1;
+    var lastOpenedCol = getOrCreateColumn(sheet, 'Last Opened');
+    var lastClickedCol = getOrCreateColumn(sheet, 'Last Clicked');
+    var openedCol = getOrCreateColumn(sheet, 'Opened');
+    var clickedCol = getOrCreateColumn(sheet, 'Clicked');
     
-    if (trackingIdCol !== -1) {
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][trackingIdCol] === tid) {
-          if (action === 'open') {
-            // Handle open tracking
-            var openedCol = data[0].indexOf('Opened');
-            if (openedCol !== -1) {
-              sheet.getRange(i + 1, openedCol + 1).setValue('Yes');
-            }
-          } else if (action === 'click') {
-            // Handle click tracking
-            var clickedCol = data[0].indexOf('Clicked');
-            if (clickedCol !== -1) {
-              var currentClicks = sheet.getRange(i + 1, clickedCol + 1).getValue();
-              var clickCount = currentClicks ? parseInt(currentClicks) + 1 : 1;
-              sheet.getRange(i + 1, clickedCol + 1).setValue(clickCount);
-            }
-            
-            // Redirect to original URL
-            var originalUrl = e.parameter.url;
-            if (originalUrl) {
-              return HtmlService.createHtmlOutput(
-                '<script>window.location.href = "' + originalUrl + '";</script>'
-              );
-            }
+    var found = false;
+    for (var i = 1; i < data.length; i++) {
+      var rowTid = data[i][trackingIdCol];
+      if (rowTid && String(rowTid).trim().toLowerCase() === String(tid).trim().toLowerCase()) {
+        found = true;
+        if (action === 'open') {
+          sheet.getRange(i + 1, openedCol).setValue('Yes');
+          sheet.getRange(i + 1, lastOpenedCol).setValue(new Date().toISOString());
+          Logger.log('Updated Opened and Last Opened for row ' + (i + 1));
+        } else if (action === 'click') {
+          var currentClicks = sheet.getRange(i + 1, clickedCol).getValue();
+          var clickCount = currentClicks ? parseInt(currentClicks) + 1 : 1;
+          sheet.getRange(i + 1, clickedCol).setValue(clickCount);
+          sheet.getRange(i + 1, lastClickedCol).setValue(new Date().toISOString());
+          Logger.log('Updated Clicked and Last Clicked for row ' + (i + 1));
+          var originalUrl = e.parameter.url;
+          if (originalUrl) {
+            return HtmlService.createHtmlOutput(
+              '<script>window.location.href = "' + originalUrl + '";</script>'
+            );
           }
-          break;
         }
+        break;
       }
+    }
+    if (!found) {
+      Logger.log('TrackingID not found: ' + tid);
     }
   }
   
@@ -297,9 +544,9 @@ function doGet(e) {
   }
   
   // Return tracking pixel for open tracking
-  var img = Utilities.base64Decode('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==');
-  return ContentService.createBinaryOutput(img).setMimeType(ContentService.MimeType.GIF);
+  return HtmlService.createHtmlOutput('<img src="https://www.google.com/images/cleardot.gif" style="display:none" width="1" height="1">');
 } 
+
 
 function getTrackingStats() {
   var sheet = SpreadsheetApp.getActiveSheet();
@@ -316,10 +563,10 @@ function getTrackingStats() {
   }
   
   var headers = data[0];
-  var emailCol = headers.indexOf('Email');
-  var trackingIdCol = headers.indexOf('TrackingID');
-  var openedCol = headers.indexOf('Opened');
-  var clickedCol = headers.indexOf('Clicked');
+  var emailCol = findColumnIndex(headers, 'Email');
+  var trackingIdCol = findColumnIndex(headers, 'TrackingID');
+  var openedCol = findColumnIndex(headers, 'Opened');
+  var clickedCol = findColumnIndex(headers, 'Clicked');
   
   var totalEmails = 0;
   var opens = 0;
@@ -358,4 +605,30 @@ function getTrackingStats() {
     openRate: Math.round(openRate * 10) / 10, // Round to 1 decimal
     clickRate: Math.round(clickRate * 10) / 10
   };
+} 
+
+function getAnalyticsData() {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  var headers = data[0];
+  var emailCol = findColumnIndex(headers, 'Email');
+  var openedCol = findColumnIndex(headers, 'Opened');
+  var lastOpenedCol = findColumnIndex(headers, 'Last Opened');
+  var clickedCol = findColumnIndex(headers, 'Clicked');
+  var lastClickedCol = findColumnIndex(headers, 'Last Clicked');
+  var unsubCol = findColumnIndex(headers, 'Unsubscribed');
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    rows.push({
+      email: emailCol !== -1 ? row[emailCol] : '',
+      opened: openedCol !== -1 ? row[openedCol] : '',
+      lastOpened: lastOpenedCol !== -1 ? row[lastOpenedCol] : '',
+      clicks: clickedCol !== -1 ? row[clickedCol] : '',
+      lastClicked: lastClickedCol !== -1 ? row[lastClickedCol] : '',
+      unsubscribed: unsubCol !== -1 ? row[unsubCol] : ''
+    });
+  }
+  return rows;
 } 

@@ -155,11 +155,14 @@
       <button class="tab active" onclick="showTab('send')">Send</button>
       <button class="tab" onclick="showTab('schedule')">Schedule</button>
       <button class="tab" onclick="showTab('jobs')">Jobs</button>
+      <button class="tab" onclick="showTab('unsubscribes')">Unsubscribes</button>
+      <button class="tab" onclick="showTab('analytics')">Analytics</button>
     </div>
 
     <!-- Send Mail Tab -->
     <div id="send-tab" class="tab-content active">
       <h2>Send Mail Myth</h2>
+      <div id="quota-info" style="margin-bottom: 12px; color: #5f6368; font-size: 13px;">Loading Gmail quota...</div>
       <label for="draft">Gmail Draft:</label>
       <select id="draft"></select>
       
@@ -212,6 +215,40 @@
       <div id="jobs-list">
         <div style="color: #5f6368; padding: 20px; text-align: center;">Loading jobs...</div>
       </div>
+    </div>
+
+    <!-- Unsubscribes Tab -->
+    <div id="unsubscribes-tab" class="tab-content">
+      <h2>Unsubscribe Management</h2>
+      
+      <!-- Add Email to Unsubscribe List -->
+      <div style="margin-bottom: 20px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
+        <h3 style="margin: 0 0 12px 0; color: #202124; font-size: 16px;">Add Email to Unsubscribe List</h3>
+        <input type="email" id="add-unsubscribe-email" placeholder="Enter email address" style="margin-bottom: 8px;">
+        <button class="secondary-btn" onclick="addEmailToUnsubscribe()" style="margin: 0;">Add to List</button>
+      </div>
+      
+      <!-- Unsubscribe List -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="margin: 0; color: #202124; font-size: 16px;">Unsubscribed Emails</h3>
+          <button class="secondary-btn" onclick="refreshUnsubscribeList()" style="margin: 0; width: auto; padding: 6px 12px;">Refresh</button>
+        </div>
+        <div id="unsubscribe-list" class="attachment-list">
+          <div style="color: #5f6368; padding: 8px;">Loading unsubscribed emails...</div>
+        </div>
+      </div>
+      
+      <div id="unsubscribe-status" class="status"></div>
+    </div>
+
+    <!-- Analytics Tab -->
+    <div id="analytics-tab" class="tab-content">
+      <h2>Advanced Analytics</h2>
+      <div id="analytics-table-container" style="overflow-x:auto; margin-top: 16px;">
+        <div style="color: #5f6368; padding: 8px;">Loading analytics...</div>
+      </div>
+      <button class="secondary-btn" onclick="refreshAnalytics()" style="margin-top: 16px;">Refresh</button>
     </div>
 
     <script>
@@ -279,6 +316,19 @@
         return Array.from(checkboxes).map(cb => cb.value);
       }
       
+      function loadQuota() {
+        google.script.run.withSuccessHandler(function(quota) {
+          const info = document.getElementById('quota-info');
+          info.textContent = `Gmail quota left today: ${quota.remaining} / ${quota.max}`;
+          if (quota.remaining < 10) {
+            info.style.color = '#d93025';
+            info.textContent += ' (Low quota!)';
+          } else {
+            info.style.color = '#5f6368';
+          }
+        }).getGmailQuota();
+      }
+
       function sendMerge() {
         const draftId = document.getElementById('draft').value;
         const range = document.getElementById('range').value;
@@ -291,11 +341,13 @@
         
         showStatus('send-status', 'Sending...', 'info');
         google.script.run
-          .withSuccessHandler(function(count) {
-            showStatus('send-status', `Sent ${count} emails!`, 'success');
+          .withSuccessHandler(function(result) {
+            showStatus('send-status', `Sent ${result.sent} emails, skipped ${result.skipped} unsubscribed`, 'success');
+            loadQuota();
           })
           .withFailureHandler(function(error) {
             showStatus('send-status', `Error: ${error.message}`, 'error');
+            loadQuota();
           })
           .sendMailMerge(draftId, range, attachments);
       }
@@ -418,10 +470,111 @@
           .getTrackingStats();
       }
       
+      function refreshUnsubscribeList() {
+        document.getElementById('unsubscribe-list').innerHTML = '<div style="color: #5f6368; padding: 8px;">Loading...</div>';
+        google.script.run
+          .withSuccessHandler(function(emails) {
+            const container = document.getElementById('unsubscribe-list');
+            if (emails.length === 0) {
+              container.innerHTML = '<div style="color: #5f6368; padding: 8px;">No unsubscribed emails</div>';
+              return;
+            }
+            
+            container.innerHTML = emails.map(email => 
+              `<div class="attachment-item">
+                <span style="flex: 1;">${email}</span>
+                <button class="secondary-btn" onclick="removeFromUnsubscribe('${email}')" style="margin: 0; width: auto; padding: 4px 8px; font-size: 12px;">Remove</button>
+              </div>`
+            ).join('');
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('unsubscribe-list').innerHTML = 
+              `<div style="color: #d93025;">Error loading list: ${error.message}</div>`;
+          })
+          .getUnsubscribeList();
+      }
+      
+      function addEmailToUnsubscribe() {
+        const email = document.getElementById('add-unsubscribe-email').value.trim();
+        if (!email) {
+          showStatus('unsubscribe-status', 'Please enter an email address', 'error');
+          return;
+        }
+        
+        if (!email.includes('@')) {
+          showStatus('unsubscribe-status', 'Please enter a valid email address', 'error');
+          return;
+        }
+        
+        showStatus('unsubscribe-status', 'Adding email...', 'info');
+        google.script.run
+          .withSuccessHandler(function() {
+            showStatus('unsubscribe-status', 'Email added to unsubscribe list', 'success');
+            document.getElementById('add-unsubscribe-email').value = '';
+            refreshUnsubscribeList();
+          })
+          .withFailureHandler(function(error) {
+            showStatus('unsubscribe-status', `Error: ${error.message}`, 'error');
+          })
+          .addToUnsubscribeList(email);
+      }
+      
+      function removeFromUnsubscribe(email) {
+        google.script.run
+          .withSuccessHandler(function() {
+            showStatus('unsubscribe-status', 'Email removed from unsubscribe list', 'success');
+            refreshUnsubscribeList();
+          })
+          .withFailureHandler(function(error) {
+            showStatus('unsubscribe-status', `Error: ${error.message}`, 'error');
+          })
+          .removeFromUnsubscribeList(email);
+      }
+
+      function refreshAnalytics() {
+        const container = document.getElementById('analytics-table-container');
+        container.innerHTML = '<div style="color: #5f6368; padding: 8px;">Loading analytics...</div>';
+        google.script.run
+          .withSuccessHandler(function(rows) {
+            if (!rows || rows.length === 0) {
+              container.innerHTML = '<div style="color: #5f6368; padding: 8px;">No data available</div>';
+              return;
+            }
+            let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+            html += '<tr style="background:#f1f3f4;">' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Email</th>' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Opened</th>' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Last Opened</th>' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Clicks</th>' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Last Clicked</th>' +
+              '<th style="padding:6px; border:1px solid #dadce0;">Unsubscribed</th>' +
+              '</tr>';
+            rows.forEach(function(row) {
+              html += '<tr>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.email || '') + '</td>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.opened || '') + '</td>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.lastOpened || '') + '</td>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.clicks || '') + '</td>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.lastClicked || '') + '</td>' +
+                '<td style="padding:6px; border:1px solid #dadce0;">' + (row.unsubscribed || '') + '</td>' +
+                '</tr>';
+            });
+            html += '</table>';
+            container.innerHTML = html;
+          })
+          .withFailureHandler(function(error) {
+            container.innerHTML = '<div style="color: #d93025;">Error loading analytics: ' + error.message + '</div>';
+          })
+          .getAnalyticsData();
+      }
+
       // Initialize
       loadDrafts();
       loadDriveFiles();
       refreshJobs();
+      refreshUnsubscribeList();
+      loadQuota();
+      refreshAnalytics();
     </script>
   </body>
 </html> 
