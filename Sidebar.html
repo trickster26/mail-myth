@@ -157,27 +157,68 @@
       <button class="tab" onclick="showTab('jobs')">Jobs</button>
       <button class="tab" onclick="showTab('unsubscribes')">Unsubscribes</button>
       <button class="tab" onclick="showTab('analytics')">Analytics</button>
+      <button class="tab" onclick="showTab('about')">Help/About</button>
     </div>
 
-    <!-- Send Mail Tab -->
+    <!-- Help/About Tab -->
+    <div id="about-tab" class="tab-content">
+      <h2>About Mail Myth</h2>
+      <div style="margin-bottom: 12px;">Mail Myth is a Google Sheets add-on for sending personalized emails, tracking opens/clicks, and managing unsubscribes.</div>
+      <ul style="margin-bottom: 16px;">
+        <li>Send personalized mail merges from Gmail drafts</li>
+        <li>Track opens and clicks (with timestamps)</li>
+        <li>Manage unsubscribes (compliance ready)</li>
+        <li>Schedule campaigns and attach files from Drive</li>
+        <li>Advanced analytics dashboard</li>
+      </ul>
+      <div style="margin-bottom: 8px; font-weight: 500;">Compliance & Support</div>
+      <div style="margin-bottom: 8px;">
+        <a href="https://docs.google.com/document/d/1ofj_C2fROW2qai2dLSiRYeUHcytkRYrm9VECO_3QBbg/edit?usp=sharing" target="_blank">Privacy Policy</a> |
+        <a href="https://docs.google.com/document/d/1KkGUy4A7MkU-Ek9y53WNvwnXu_fxc6RLm1RE0EyKnzA/edit?usp=sharing" target="_blank">Terms of Service</a>
+      </div>
+      <div style="margin-bottom: 8px;">For questions or support, contact: <b>ak26200026@gmail.com</b></div>
+      <div style="font-size:12px; color:#888;">This add-on is designed to meet Google’s add-on approval requirements.</div>
+    </div>
+
+    <!-- Templates Tab (commented out for now)
+    <div id="templates-tab" class="tab-content">
+      <h2>Template Management</h2>
+      <div style="margin-bottom: 16px;">
+        <label for="template-name">Template Name:</label>
+        <input type="text" id="template-name" placeholder="Enter template name">
+        <label for="template-subject">Subject:</label>
+        <input type="text" id="template-subject" placeholder="Email subject">
+        <label for="template-body">Body:</label>
+        <textarea id="template-body" rows="6" style="width:100%;"></textarea>
+        <button onclick="saveTemplateUI()">Save Template</button>
+        <button class="secondary-btn" onclick="clearTemplateFields()">Clear</button>
+        <div id="template-status" class="status"></div>
+      </div>
+      <div style="margin-bottom: 8px; font-weight: 500;">Saved Templates:</div>
+      <div id="template-list" class="attachment-list"></div>
+    </div>
+    -->
+
+    <!-- Update Send Tab to allow loading template -->
     <div id="send-tab" class="tab-content active">
       <h2>Send Mail Myth</h2>
       <div id="quota-info" style="margin-bottom: 12px; color: #5f6368; font-size: 13px;">Loading Gmail quota...</div>
       <label for="draft">Gmail Draft:</label>
       <select id="draft"></select>
-      
+      <!-- <button class="secondary-btn" style="margin-top:8px;" onclick="loadTemplateToSend()">Load Template</button>
+      <label for="send-subject">Subject:</label>
+      <input type="text" id="send-subject" placeholder="Email subject">
+      <label for="send-body">Body:</label>
+      <textarea id="send-body" rows="6" style="width:100%;"></textarea> -->
       <label for="range">Sheet Range:</label>
       <input type="text" id="range" value="A1:C10" placeholder="e.g. A1:C10">
-      
       <label for="attachments">Attachments (from Drive):</label>
       <div id="attachment-list" class="attachment-list">
         <div style="color: #5f6368; padding: 8px;">Loading files...</div>
       </div>
-      
       <button onclick="sendMerge()">Send Now</button>
       <button class="secondary-btn" onclick="showTrackingStats()">View Tracking Stats</button>
       <div id="send-status" class="status"></div>
-      
       <!-- Tracking Stats Section -->
       <div id="tracking-stats" style="display: none; margin-top: 20px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
         <h3 style="margin: 0 0 12px 0; color: #202124;">📊 Tracking Statistics</h3>
@@ -568,6 +609,94 @@
           .getAnalyticsData();
       }
 
+      /*
+      function refreshTemplateList() {
+        google.script.run.withSuccessHandler(function(templates) {
+          const container = document.getElementById('template-list');
+          if (!templates || templates.length === 0) {
+            container.innerHTML = '<div style="color: #5f6368; padding: 8px;">No templates saved</div>';
+            return;
+          }
+          container.innerHTML = templates.map(function(t) {
+            return `<div class="attachment-item">
+              <span style="flex:1;"><b>${t.name}</b> <span style="color:#888;font-size:11px;">(updated: ${t.updated ? t.updated.replace('T',' ').slice(0,16) : ''})</span></span>
+              <button class="secondary-btn" onclick="loadTemplateUI('${t.name}')" style="margin:0 4px;">Load</button>
+              <button class="secondary-btn" onclick="previewTemplate('${t.name}')" style="margin:0 4px;">Preview</button>
+              <button class="secondary-btn" onclick="deleteTemplateUI('${t.name}')" style="margin:0 4px;">Delete</button>
+            </div>`;
+          }).join('');
+        }).listTemplates();
+      }
+
+      function saveTemplateUI() {
+        const name = document.getElementById('template-name').value.trim();
+        const subject = document.getElementById('template-subject').value;
+        const body = document.getElementById('template-body').value;
+        if (!name) {
+          showStatus('template-status', 'Please enter a template name', 'error');
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function() {
+            showStatus('template-status', 'Template saved!', 'success');
+            refreshTemplateList();
+          })
+          .withFailureHandler(function(error) {
+            showStatus('template-status', `Error: ${error.message}`, 'error');
+          })
+          .saveTemplate(name, subject, body);
+      }
+
+      function loadTemplateUI(name) {
+        google.script.run.withSuccessHandler(function(t) {
+          if (!t) return;
+          document.getElementById('template-name').value = name;
+          document.getElementById('template-subject').value = t.subject;
+          document.getElementById('template-body').value = t.body;
+        }).loadTemplate(name);
+      }
+
+      function previewTemplate(name) {
+        google.script.run.withSuccessHandler(function(t) {
+          if (!t) return;
+          alert('Subject: ' + t.subject + '\n\nBody:\n' + t.body);
+        }).loadTemplate(name);
+      }
+
+      function deleteTemplateUI(name) {
+        if (!confirm('Delete template "' + name + '"?')) return;
+        google.script.run.withSuccessHandler(function() {
+          refreshTemplateList();
+        }).deleteTemplate(name);
+      }
+
+      function clearTemplateFields() {
+        document.getElementById('template-name').value = '';
+        document.getElementById('template-subject').value = '';
+        document.getElementById('template-body').value = '';
+      }
+
+      function loadTemplateToSend() {
+        // List templates and let user pick one to load into send fields
+        google.script.run.withSuccessHandler(function(templates) {
+          if (!templates || templates.length === 0) {
+            alert('No templates saved.');
+            return;
+          }
+          const name = prompt('Enter template name to load:', templates[0].name);
+          if (!name) return;
+          google.script.run.withSuccessHandler(function(t) {
+            if (!t) {
+              alert('Template not found.');
+              return;
+            }
+            document.getElementById('send-subject').value = t.subject;
+            document.getElementById('send-body').value = t.body;
+          }).loadTemplate(name);
+        }).listTemplates();
+      }
+      */
+
       // Initialize
       loadDrafts();
       loadDriveFiles();
@@ -575,6 +704,7 @@
       refreshUnsubscribeList();
       loadQuota();
       refreshAnalytics();
+      // refreshTemplateList();
     </script>
   </body>
 </html> 

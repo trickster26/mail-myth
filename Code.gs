@@ -632,3 +632,47 @@ function getAnalyticsData() {
   }
   return rows;
 } 
+
+function saveTemplate(name, subject, body) {
+  var properties = PropertiesService.getScriptProperties();
+  var templates = properties.getProperty('mail_templates');
+  var templateList = templates ? JSON.parse(templates) : {};
+  templateList[name] = { subject: subject, body: body, updated: new Date().toISOString() };
+  properties.setProperty('mail_templates', JSON.stringify(templateList));
+  return true;
+}
+
+function loadTemplate(name) {
+  var properties = PropertiesService.getScriptProperties();
+  var templates = properties.getProperty('mail_templates');
+  if (!templates) return null;
+  var templateList = JSON.parse(templates);
+  return templateList[name] || null;
+}
+
+function listTemplates() {
+  var properties = PropertiesService.getScriptProperties();
+  var templates = properties.getProperty('mail_templates');
+  if (!templates) return [];
+  var templateList = JSON.parse(templates);
+  return Object.keys(templateList).map(function(name) {
+    return {
+      name: name,
+      subject: templateList[name].subject,
+      updated: templateList[name].updated
+    };
+  });
+}
+
+function deleteTemplate(name) {
+  var properties = PropertiesService.getScriptProperties();
+  var templates = properties.getProperty('mail_templates');
+  if (!templates) return false;
+  var templateList = JSON.parse(templates);
+  if (templateList[name]) {
+    delete templateList[name];
+    properties.setProperty('mail_templates', JSON.stringify(templateList));
+    return true;
+  }
+  return false;
+} 
